@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Wow Gifting — Admin</title>
+  <style>
+    :root{--primary:#ff6fb5;--accent:#6b5bff;--bg:#fff7fb;--text:#222}
+    body{font-family:Inter,system-ui,Arial;margin:0;background:#f6f6f8;color:var(--text)}
+    header{background:linear-gradient(135deg,var(--primary),#f9c2e8);padding:18px 20px}
+    .container{max-width:1100px;margin:0 auto;padding:20px}
+    .btn{background:var(--accent);color:#fff;padding:8px 12px;border-radius:8px;border:0;cursor:pointer}
+    .ghost{background:transparent;border:1px solid rgba(0,0,0,0.06)}
+    .grid{display:grid;grid-template-columns:1fr 320px;gap:18px}
+    .card{background:#fff;border-radius:10px;padding:12px;box-shadow:0 8px 20px rgba(0,0,0,0.04)}
+    footer{text-align:center;color:#666;margin:28px 0}
+    input,textarea{padding:8px;border-radius:8px;border:1px solid rgba(0,0,0,0.08);width:100%}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container"><h2>Admin Dashboard — Wow Gifting</h2></div>
+  </header>
+
+  <main class="container">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div><strong id="adminEmail">Not signed in</strong></div>
+      <div>
+        <button class="btn" id="signInBtn">Sign in</button>
+        <button class="btn ghost" id="signOutBtn" style="display:none">Sign out</button>
+      </div>
+    </div>
+
+    <section style="margin-top:18px" class="grid">
+      <div>
+        <div class="card">
+          <h3>Products</h3>
+          <div style="margin-top:8px">
+            <label>Title</label><input id="p_title" />
+            <label>Price (₹)</label><input id="p_price" />
+            <label>Description</label><textarea id="p_desc"></textarea>
+            <label>Image</label><input type="file" id="p_image" accept="image/*" />
+            <div style="margin-top:8px;display:flex;gap:8px">
+              <button class="btn" id="addProduct">Add Product</button>
+              <button class="btn ghost" id="exportData">Export Data</button>
+            </div>
+          </div>
+          <div id="adminList" style="margin-top:12px"></div>
+        </div>
+      </div>
+
+      <aside class="card">
+        <h3>Theme & Store Info</h3>
+        <label>Store Title</label><input id="storeTitle" />
+        <label>Primary color</label><input id="primaryColor" type="color" value="#ff6fb5" />
+        <label>Accent color</label><input id="accentColor" type="color" value="#6b5bff" />
+      </aside>
+    </section>
+  </main>
+
+  <footer>Admin UI — uses Firebase Authentication & Firestore placeholders. See README for setup.</footer>
+
+  <!-- Firebase SDKs (replace config) -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+
+<script>
+/* ====== CONFIG: Replace with your Firebase project config ======
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "SENDER_ID",
+  appId: "APP_ID"
+};
+================================================================= */
+const firebaseConfig = {};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+const LS_KEY = 'wow_store_v2';
+let store = { title:'Wow Gifting', products:[], cart:[] };
+
+function loadStore(){ try{ const d = localStorage.getItem(LS_KEY); if(d) store = JSON.parse(d); }catch(e){} render(); }
+function saveStore(){ localStorage.setItem(LS_KEY, JSON.stringify(store)); render(); }
+
+function render(){
+  document.getElementById('storeTitle').value = store.title || '';
+  const list = document.getElementById('adminList'); list.innerHTML='';
+  store.products.slice().reverse().forEach(p=>{
+    const div = document.createElement('div'); div.style.padding='8px 6px'; div.style.borderBottom='1px dashed #eee';
+    div.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center"><div><strong>${escape(p.title)}</strong><div style="color:#666">₹${p.price}</div></div><div><label><input type="checkbox" data-id="${p.id}" ${p.published?'checked':''}/> Publish</label><button class="btn ghost" data-edit="${p.id}">Edit</button><button class="btn" data-del="${p.id}">Delete</button></div></div>`;
+    list.appendChild(div);
+  });
+}
+
+document.getElementById('addProduct').addEventListener('click', async ()=>{
+  const title = document.getElementById('p_title').value.trim();
+  const price = document.getElementById('p_price').value.trim();
+  const desc = document.getElementById('p_desc').value.trim();
+  const file = document.getElementById('p_image').files[0];
+  if(!title||!price){ alert('Provide title and price'); return; }
+  let img='';
+  if(file){ img = await readFileAsDataURL(file); }
+  const id = 'p_'+Date.now();
+  store.products.push({id,title,price:Number(price)||0,desc,img,published:true});
+  saveStore();
+  alert('Product added (saved locally). To make persistent across devices, configure Firestore in README.');
+  document.getElementById('p_title').value='';document.getElementById('p_price').value='';document.getElementById('p_desc').value='';document.getElementById('p_image').value='';
+});
+
+document.getElementById('exportData').addEventListener('click', ()=>{
+  const blob = new Blob([JSON.stringify(store,null,2)],{type:'application/json'}); const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='wow_store_export.json'; a.click(); URL.revokeObjectURL(url);
+});
+
+document.getElementById('adminList').addEventListener('click', e=>{
+  const id = e.target.getAttribute('data-del'); if(id){ if(confirm('Delete?')){ store.products = store.products.filter(p=>p.id!==id); saveStore(); } return }
+  const eid = e.target.getAttribute('data-edit'); if(eid){ openEdit(eid); return }
+});
+document.getElementById('adminList').addEventListener('change', e=>{
+  const id = e.target.getAttribute('data-id'); if(id){ const p = store.products.find(x=>x.id===id); if(p){ p.published = e.target.checked; saveStore(); } }
+});
+
+function openEdit(id){
+  const p = store.products.find(x=>x.id===id); if(!p) return;
+  document.getElementById('p_title').value=p.title; document.getElementById('p_price').value=p.price; document.getElementById('p_desc').value=p.desc;
+  const btn = document.getElementById('addProduct'); btn.textContent='Update Product';
+  btn.onclick = async ()=>{
+    p.title = document.getElementById('p_title').value.trim(); p.price = Number(document.getElementById('p_price').value.trim())||0; p.desc = document.getElementById('p_desc').value.trim();
+    const file = document.getElementById('p_image').files[0]; if(file){ p.img = await readFileAsDataURL(file); }
+    saveStore(); btn.textContent='Add Product'; btn.onclick = null; document.getElementById('p_title').value='';document.getElementById('p_price').value='';document.getElementById('p_desc').value='';document.getElementById('p_image').value=''; alert('Updated');
+  }
+}
+
+// auth UI
+document.getElementById('signInBtn').addEventListener('click', ()=>showAuthModal());
+document.getElementById('signOutBtn').addEventListener('click', ()=>auth.signOut());
+
+function showAuthModal(){
+  const modal = document.createElement('div'); modal.className='modal'; modal.style.position='fixed'; modal.style.inset=0; modal.style.background='rgba(0,0,0,0.45)'; modal.style.display='flex'; modal.style.alignItems='center'; modal.style.justifyContent='center'; modal.innerHTML = `<div style="background:#fff;padding:18px;border-radius:12px;max-width:420px;width:100%"><h3>Sign in</h3><div><label>Email</label><input id="m_email" type="email" /><label>Password</label><input id="m_pass" type="password" /></div><div style="display:flex;gap:8px;margin-top:12px"><button id="m_signin" class="btn">Sign in</button><button id="m_signup" class="btn ghost">Create account</button><button id="m_close" class="btn ghost">Close</button></div><div style="margin-top:8px;color:#666;font-size:13px">Only users granted <strong>admin</strong> claim via Firebase Admin SDK can access editor features.</div></div>`;
+  document.body.appendChild(modal);
+  modal.querySelector('#m_close').addEventListener('click', ()=>modal.remove());
+  modal.querySelector('#m_signup').addEventListener('click', async ()=>{
+    const email = modal.querySelector('#m_email').value; const pass = modal.querySelector('#m_pass').value;
+    if(!email||!pass){ alert('Provide email and password'); return; }
+    try{ await auth.createUserWithEmailAndPassword(email,pass); alert('Account created. Ask project owner to grant admin claim.'); modal.remove(); }
+    catch(err){ alert(err.message); }
+  });
+  modal.querySelector('#m_signin').addEventListener('click', async ()=>{
+    const email = modal.querySelector('#m_email').value; const pass = modal.querySelector('#m_pass').value;
+    try{ await auth.signInWithEmailAndPassword(email,pass); modal.remove(); } catch(err){ alert(err.message); }
+  });
+}
+
+auth.onAuthStateChanged(async user=>{
+  if(user){
+    document.getElementById('adminEmail').textContent = user.email || 'Admin';
+    document.getElementById('signInBtn').style.display='none';
+    document.getElementById('signOutBtn').style.display='inline-block';
+    // check custom claim
+    const idTokenResult = await user.getIdTokenResult(true);
+    const isAdmin = idTokenResult.claims && idTokenResult.claims.admin === true;
+    if(!isAdmin){
+      alert('Your account is not an admin. Contact project owner to grant admin access.');
+    } else {
+      alert('Admin access granted. You can manage products.');
+    }
+  } else {
+    document.getElementById('adminEmail').textContent = 'Not signed in';
+    document.getElementById('signInBtn').style.display='inline-block';
+    document.getElementById('signOutBtn').style.display='none';
+  }
+});
+
+// helpers
+function readFileAsDataURL(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); }) }
+function escape(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+
+// initial demo content if empty
+if(!localStorage.getItem(LS_KEY)){
+  store.products = [
+    {id:'p1',title:'Handmade Bouquet',price:799,desc:'Fresh flowers bouquet',published:true,img:''},
+    {id:'p2',title:'Teddy Bear',price:499,desc:'Soft plush teddy',published:true,img:''}
+  ];
+  saveStore();
+}
+loadStore();
+</script>
+</body>
+</html>
